@@ -9,8 +9,9 @@ use reqwest::blocking::get;
 pub fn fetch_code(input: TokenStream) -> TokenStream {
     let url = parse_macro_input!(input as LitStr).value();
     let response = get(&url).expect("Failed to fetch code from URL");
-    let code = response.text().expect("Failed to read code from response");
-    // println!("```rust\n{}\n```", code);
+    let codestring: String = response.text().expect("Failed to read response text");
+    let code: proc_macro2::TokenStream = codestring.parse().expect("Failed to parse code from response");
+
 
     let tokens = quote! {
         #code
