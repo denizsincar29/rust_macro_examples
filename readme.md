@@ -31,17 +31,16 @@ error: this program can't be compiled more than 3 times!
 
 ## shebang_code
 
-A proc-macro attribute that fetches code from a URL and expands it into your code, automatically stripping any shebang lines (lines starting with `#!`). This is designed to work with playground URLs or raw code URLs.
+A proc-macro that fetches code from a URL and expands it into your code. This macro uses the `!` syntax (function-like macro) for a shebang-like appearance, as in `shebang_code!("url")`. This is designed to work with playground URLs or raw code URLs.
 
 Usage:
 ```rust
 use procmacros::shebang_code;
 
-#[shebang_code("https://gist.githubusercontent.com/rust-play/5e3665f22343b85ec791e13b1f56c367/raw/playground.rs")]
-fn placeholder() {}
+shebang_code!("https://gist.githubusercontent.com/rust-play/5e3665f22343b85ec791e13b1f56c367/raw/playground.rs");
 ```
 
-The macro will replace the function it's applied to with the code from the URL. If the fetched code contains a shebang line, it will be automatically removed.
+The macro will expand to the code from the URL. The `!` syntax gives it a shebang-like appearance.
 
 ## About dependency definition macros
 

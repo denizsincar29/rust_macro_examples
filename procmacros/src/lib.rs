@@ -68,33 +68,29 @@ pub fn compile_counter(_input: TokenStream) -> TokenStream {
     }.into()
 }
 
-/// A proc-macro that fetches code from a URL and inserts it, supporting shebang-style syntax.
-/// This is designed to work with playground URLs or raw code URLs.
+/// A proc-macro that fetches code from a URL and inserts it.
+/// This macro uses the ! syntax for a shebang-like appearance: shebang_code!("url")
+/// It's designed to work with playground URLs or raw code URLs.
 /// 
-/// Usage: `#[shebang_code("https://...")]`
-#[proc_macro_attribute]
-pub fn shebang_code(attr: TokenStream, _item: TokenStream) -> TokenStream {
-    let url = parse_macro_input!(attr as LitStr).value();
+/// Usage:
+/// ```rust
+/// shebang_code!("https://...");
+/// ```
+#[proc_macro]
+pub fn shebang_code(input: TokenStream) -> TokenStream {
+    let url = parse_macro_input!(input as LitStr).value();
     
     // Fetch the code from the URL
     let response = get(&url).unwrap_or_else(|e| panic!("Failed to fetch code from URL '{}': {}", url, e));
     let codestring: String = response.text().unwrap_or_else(|e| panic!("Failed to read response text from '{}': {}", url, e));
-    
-    // If the code starts with a shebang, remove it
-    let cleaned_code = if codestring.starts_with("#!") {
-        codestring.lines().skip(1).collect::<Vec<_>>().join("\n")
-    } else {
-        codestring
-    };
-    
-    let code: proc_macro2::TokenStream = cleaned_code.parse().unwrap_or_else(|e| {
+    let code: proc_macro2::TokenStream = codestring.parse().unwrap_or_else(|e| {
         panic!("Failed to parse code from '{}' as valid Rust code: {}. Check that the URL contains valid Rust syntax.", url, e)
     });
-    
+
     let tokens = quote! {
         #code
     };
-    
+
     tokens.into()
 }
 
