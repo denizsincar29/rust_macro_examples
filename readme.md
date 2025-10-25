@@ -29,18 +29,31 @@ After 3 clean builds, attempting a 4th build will result in:
 error: this program can't be compiled more than 3 times!
 ```
 
-## shebang_code
+## playground
 
-A proc-macro that fetches code from a URL and expands it into your code. This macro uses the `!` syntax (function-like macro) for a shebang-like appearance, as in `shebang_code!("url")`. This is designed to work with playground URLs or raw code URLs.
+A proc-macro that fetches code from a Rust Playground URL and expands it into your code.
 
 Usage:
 ```rust
-use procmacros::shebang_code;
+use procmacros::playground;
 
-shebang_code!("https://gist.githubusercontent.com/rust-play/5e3665f22343b85ec791e13b1f56c367/raw/playground.rs");
+playground!("https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&gist=...");
 ```
 
-The macro will expand to the code from the URL. The `!` syntax gives it a shebang-like appearance.
+The macro will expand to the code from the playground URL.
+
+## raw_code
+
+A proc-macro that fetches raw Rust code from a URL and expands it into your code.
+
+Usage:
+```rust
+use procmacros::raw_code;
+
+raw_code!("https://gist.githubusercontent.com/rust-play/5e3665f22343b85ec791e13b1f56c367/raw/playground.rs");
+```
+
+The macro will expand to the code from the URL.
 
 ## About dependency definition macros
 

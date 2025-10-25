@@ -68,20 +68,42 @@ pub fn compile_counter(_input: TokenStream) -> TokenStream {
     }.into()
 }
 
-/// A proc-macro that fetches code from a URL and inserts it.
-/// This macro uses the ! syntax for a shebang-like appearance: shebang_code!("url")
-/// It's designed to work with playground URLs or raw code URLs.
+/// A proc-macro that fetches code from a Rust Playground URL and inserts it.
 /// 
 /// Usage:
 /// ```rust
-/// shebang_code!("https://...");
+/// playground!("https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&gist=...");
 /// ```
 #[proc_macro]
-pub fn shebang_code(input: TokenStream) -> TokenStream {
+pub fn playground(input: TokenStream) -> TokenStream {
     let url = parse_macro_input!(input as LitStr).value();
     
-    // Fetch the code from the URL
-    let response = get(&url).unwrap_or_else(|e| panic!("Failed to fetch code from URL '{}': {}", url, e));
+    // Fetch the code from the playground URL
+    let response = get(&url).unwrap_or_else(|e| panic!("Failed to fetch code from playground URL '{}': {}", url, e));
+    let codestring: String = response.text().unwrap_or_else(|e| panic!("Failed to read response text from '{}': {}", url, e));
+    let code: proc_macro2::TokenStream = codestring.parse().unwrap_or_else(|e| {
+        panic!("Failed to parse code from '{}' as valid Rust code: {}. Check that the URL contains valid Rust syntax.", url, e)
+    });
+
+    let tokens = quote! {
+        #code
+    };
+
+    tokens.into()
+}
+
+/// A proc-macro that fetches raw Rust code from a URL and inserts it.
+/// 
+/// Usage:
+/// ```rust
+/// raw_code!("https://gist.githubusercontent.com/.../file.rs");
+/// ```
+#[proc_macro]
+pub fn raw_code(input: TokenStream) -> TokenStream {
+    let url = parse_macro_input!(input as LitStr).value();
+    
+    // Fetch the raw code from the URL
+    let response = get(&url).unwrap_or_else(|e| panic!("Failed to fetch raw code from URL '{}': {}", url, e));
     let codestring: String = response.text().unwrap_or_else(|e| panic!("Failed to read response text from '{}': {}", url, e));
     let code: proc_macro2::TokenStream = codestring.parse().unwrap_or_else(|e| {
         panic!("Failed to parse code from '{}' as valid Rust code: {}. Check that the URL contains valid Rust syntax.", url, e)
