@@ -140,4 +140,95 @@ pub fn raw_code(input: TokenStream) -> TokenStream {
 // So while you *might* be able to hack something together, it's definitely not recommended
 // and would go against Rust's philosophy of explicit, declarative dependency management.
 
+/// A proc-macro attribute that compiles Brainfuck code into Rust code at compile time.
+/// 
+/// The macro takes two string literals:
+/// - The Brainfuck code to compile
+/// - The input string (one byte per ',' command in the BF code)
+/// 
+/// Usage:
+/// ```rust
+/// #[brainfuck("+++++++++[>++++++++<-]>.", "")]
+/// fn hello() {}
+/// ```
+/// 
+/// The function will be replaced with code that returns the BF output as a String.
+#[proc_macro_attribute]
+pub fn brainfuck(attr: TokenStream, item: TokenStream) -> TokenStream {
+    use syn::{parse::Parser, punctuated::Punctuated, Token, ItemFn};
+    
+    // Parse the attribute arguments as two comma-separated string literals
+    let parser = Punctuated::<LitStr, Token![,]>::parse_separated_nonempty;
+    let args = parser.parse(attr).expect("Expected two string literals: brainfuck code and input");
+    
+    let args_vec: Vec<_> = args.into_iter().collect();
+    if args_vec.len() != 2 {
+        panic!("brainfuck macro requires exactly 2 arguments: BF code and input string");
+    }
+    
+    let bf_code = args_vec[0].value();
+    let input = args_vec[1].value();
+    
+    // Parse the item to get the function name
+    let func = syn::parse::<ItemFn>(item).expect("brainfuck attribute can only be applied to functions");
+    let func_name = func.sig.ident;
+    
+    // Compile the brainfuck code into Rust code
+    let mut rust_code = format!("fn {}() -> String {{\n", func_name);
+    rust_code.push_str("    let mut memory = vec![0u8; 30000];\n");
+    rust_code.push_str("    let mut ptr = 0usize;\n");
+    rust_code.push_str("    let mut output = String::new();\n");
+    
+    if !input.is_empty() {
+        rust_code.push_str(&format!("    let input = {:?}.as_bytes();\n", input));
+        rust_code.push_str("    let mut input_ptr = 0usize;\n");
+    }
+    
+    rust_code.push_str("\n");
+    
+    // Track loop depth for proper indentation
+    let mut indent = 1;
+    
+    for ch in bf_code.chars() {
+        let spaces = "    ".repeat(indent);
+        match ch {
+            '>' => rust_code.push_str(&format!("{}ptr = (ptr + 1) % 30000;\n", spaces)),
+            '<' => rust_code.push_str(&format!("{}ptr = if ptr == 0 {{ 29999 }} else {{ ptr - 1 }};\n", spaces)),
+            '+' => rust_code.push_str(&format!("{}memory[ptr] = memory[ptr].wrapping_add(1);\n", spaces)),
+            '-' => rust_code.push_str(&format!("{}memory[ptr] = memory[ptr].wrapping_sub(1);\n", spaces)),
+            '.' => rust_code.push_str(&format!("{}output.push(memory[ptr] as char);\n", spaces)),
+            ',' => {
+                if !input.is_empty() {
+                    rust_code.push_str(&format!("{}if input_ptr < input.len() {{\n", spaces));
+                    rust_code.push_str(&format!("{}    memory[ptr] = input[input_ptr];\n", spaces));
+                    rust_code.push_str(&format!("{}    input_ptr += 1;\n", spaces));
+                    rust_code.push_str(&format!("{}}}\n", spaces));
+                } else {
+                    rust_code.push_str(&format!("{}memory[ptr] = 0;\n", spaces));
+                }
+            },
+            '[' => {
+                rust_code.push_str(&format!("{}while memory[ptr] != 0 {{\n", spaces));
+                indent += 1;
+            },
+            ']' => {
+                indent = indent.saturating_sub(1);
+                let spaces = "    ".repeat(indent);
+                rust_code.push_str(&format!("{}}}\n", spaces));
+            },
+            _ => {} // Ignore other characters (comments)
+        }
+    }
+    
+    rust_code.push_str("    output\n");
+    rust_code.push_str("}\n");
+    
+    // Parse the generated Rust code into a TokenStream
+    let code: proc_macro2::TokenStream = rust_code.parse().unwrap_or_else(|e| {
+        panic!("Failed to parse generated Rust code: {}. Generated code:\n{}", e, rust_code)
+    });
+    
+    code.into()
+}
+
 

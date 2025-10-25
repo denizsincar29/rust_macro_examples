@@ -55,6 +55,31 @@ raw_code!("https://gist.githubusercontent.com/rust-play/5e3665f22343b85ec791e13b
 
 The macro will expand to the code from the URL.
 
+## brainfuck
+
+A proc-macro attribute that compiles Brainfuck code into Rust code at compile time. The macro takes two string literals: the Brainfuck code to execute and an input string (one byte per `,` command in the BF code).
+
+Usage:
+```rust
+use procmacros::brainfuck;
+
+// Classic "Hello World!" in Brainfuck
+#[brainfuck("++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.", "")]
+fn hello_world() {}
+
+// Echo input
+#[brainfuck(",.", "A")]
+fn echo() {}
+
+// Use the generated functions
+fn main() {
+    println!("{}", hello_world());  // Output: Hello World!
+    println!("{}", echo());         // Output: A
+}
+```
+
+The macro compiles the Brainfuck code at compile time and generates a Rust function that returns the output as a `String`. The `,` command in Brainfuck reads bytes from the input string sequentially.
+
 ## About dependency definition macros
 
 **Question**: Can we make a proc-macro that defines dependencies for the rust project to not ship cargo.toml?
