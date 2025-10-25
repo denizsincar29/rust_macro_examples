@@ -25,11 +25,52 @@ pub fn fetch_code(input: TokenStream) -> TokenStream {
 }
 
 /// A proc-macro that counts how many times the binary has been compiled.
-/// If the count exceeds 3, it produces a compile error.
+/// Takes an optional limit (defaults to 3) and custom error message.
 /// 
-/// Usage: `compile_counter!()`
+/// Usage: 
+/// - `compile_counter!()` - defaults to 3 attempts
+/// - `compile_counter!(5)` - allows 5 attempts
+/// - `compile_counter!(3, "Custom error message!")`
 #[proc_macro]
-pub fn compile_counter(_input: TokenStream) -> TokenStream {
+pub fn compile_counter(input: TokenStream) -> TokenStream {
+    use syn::{parse::Parser, punctuated::Punctuated, Token, Lit, Expr};
+    
+    // Parse optional arguments: limit and error message
+    let parser = Punctuated::<Expr, Token![,]>::parse_terminated;
+    let args = parser.parse(input).unwrap_or_else(|_| Punctuated::new());
+    let args_vec: Vec<_> = args.into_iter().collect();
+    
+    // Extract limit (default 3) and error message
+    let limit: u32 = if args_vec.is_empty() {
+        3
+    } else {
+        match &args_vec[0] {
+            Expr::Lit(expr_lit) => {
+                if let Lit::Int(lit_int) = &expr_lit.lit {
+                    lit_int.base10_parse().unwrap_or(3)
+                } else {
+                    3
+                }
+            }
+            _ => 3,
+        }
+    };
+    
+    let error_msg = if args_vec.len() > 1 {
+        match &args_vec[1] {
+            Expr::Lit(expr_lit) => {
+                if let Lit::Str(lit_str) = &expr_lit.lit {
+                    lit_str.value()
+                } else {
+                    format!("this program can't be compiled more than {} times!", limit)
+                }
+            }
+            _ => format!("this program can't be compiled more than {} times!", limit),
+        }
+    } else {
+        format!("this program can't be compiled more than {} times!", limit)
+    };
+    
     // Get the path to store the counter file
     let counter_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -55,16 +96,117 @@ pub fn compile_counter(_input: TokenStream) -> TokenStream {
     }
     
     // Check if we've exceeded the limit
-    if new_count > 3 {
-        // Create a compile error
+    if new_count > limit {
+        // Create a compile error with custom message
         return quote! {
-            compile_error!("this program can't be compiled more than 3 times!");
+            compile_error!(#error_msg);
         }.into();
     }
     
     // Return an empty token stream (or you could return some info about the count)
     quote! {
         // Compilation count: #new_count
+    }.into()
+}
+
+/// A proc-macro that allows compilation only at specific times with a custom error message.
+/// 
+/// Usage:
+/// ```rust
+/// // Only allow compilation between 9 AM and 5 PM
+/// compile_time!("09:00", "17:00", "Can only compile during business hours (9 AM - 5 PM)!");
+/// 
+/// // With date range (YYYY-MM-DD HH:MM format)
+/// compile_time!("2024-01-01 00:00", "2024-12-31 23:59", "This code expires at end of 2024!");
+/// ```
+#[proc_macro]
+pub fn compile_time(input: TokenStream) -> TokenStream {
+    use syn::{parse::Parser, punctuated::Punctuated, Token};
+    use std::time::SystemTime;
+    
+    // Parse arguments: start_time, end_time, error_message
+    let parser = Punctuated::<LitStr, Token![,]>::parse_separated_nonempty;
+    let args = parser.parse(input).expect("Expected: start_time, end_time, error_message");
+    let args_vec: Vec<_> = args.into_iter().collect();
+    
+    if args_vec.len() != 3 {
+        panic!("compile_time! requires 3 arguments: start_time, end_time, error_message");
+    }
+    
+    let start_str = args_vec[0].value();
+    let end_str = args_vec[1].value();
+    let error_msg = args_vec[2].value();
+    
+    // Parse time strings - support both HH:MM and YYYY-MM-DD HH:MM formats
+    let parse_time = |time_str: &str| -> Result<(u32, u32, u32, u32, u32), String> {
+        if time_str.contains('-') {
+            // Full datetime format: YYYY-MM-DD HH:MM
+            let parts: Vec<&str> = time_str.split(' ').collect();
+            if parts.len() != 2 {
+                return Err(format!("Invalid datetime format: {}", time_str));
+            }
+            let date_parts: Vec<&str> = parts[0].split('-').collect();
+            let time_parts: Vec<&str> = parts[1].split(':').collect();
+            if date_parts.len() != 3 || time_parts.len() != 2 {
+                return Err(format!("Invalid datetime format: {}", time_str));
+            }
+            Ok((
+                date_parts[0].parse().map_err(|_| "Invalid year")?,
+                date_parts[1].parse().map_err(|_| "Invalid month")?,
+                date_parts[2].parse().map_err(|_| "Invalid day")?,
+                time_parts[0].parse().map_err(|_| "Invalid hour")?,
+                time_parts[1].parse().map_err(|_| "Invalid minute")?,
+            ))
+        } else {
+            // Time only format: HH:MM (use today's date)
+            let time_parts: Vec<&str> = time_str.split(':').collect();
+            if time_parts.len() != 2 {
+                return Err(format!("Invalid time format: {}", time_str));
+            }
+            Ok((
+                0, 0, 0,
+                time_parts[0].parse().map_err(|_| "Invalid hour")?,
+                time_parts[1].parse().map_err(|_| "Invalid minute")?,
+            ))
+        }
+    };
+    
+    let start_time = parse_time(&start_str).expect("Failed to parse start time");
+    let end_time = parse_time(&end_str).expect("Failed to parse end time");
+    
+    // Get current time
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("System time error");
+    let secs = now.as_secs();
+    
+    // Simple time check (this is approximate - a real implementation would use chrono)
+    let (_, _, _, start_hour, start_min) = start_time;
+    let (_, _, _, end_hour, end_min) = end_time;
+    
+    // Get current hour and minute (rough approximation)
+    let current_hour = ((secs / 3600) % 24) as u32;
+    let current_min = ((secs / 60) % 60) as u32;
+    let current_time_mins = current_hour * 60 + current_min;
+    let start_time_mins = start_hour * 60 + start_min;
+    let end_time_mins = end_hour * 60 + end_min;
+    
+    // Check if current time is within allowed range
+    let is_allowed = if start_time_mins <= end_time_mins {
+        current_time_mins >= start_time_mins && current_time_mins <= end_time_mins
+    } else {
+        // Handle overnight range
+        current_time_mins >= start_time_mins || current_time_mins <= end_time_mins
+    };
+    
+    if !is_allowed {
+        return quote! {
+            compile_error!(#error_msg);
+        }.into();
+    }
+    
+    quote! {
+        // Compilation allowed at current time
     }.into()
 }
 
@@ -115,30 +257,6 @@ pub fn raw_code(input: TokenStream) -> TokenStream {
 
     tokens.into()
 }
-
-// Question: Can we make a proc-macro that defines dependencies for the rust project to not ship cargo.toml?
-// 
-// Answer: Technically, it's theoretically possible but highly impractical and not recommended:
-// 
-// 1. Proc-macros execute during compilation, which happens AFTER dependency resolution
-// 2. Cargo needs Cargo.toml before it even starts compiling to know which crates to download
-// 3. You could theoretically:
-//    - Create a build.rs script that generates Cargo.toml before compilation
-//    - Use cargo-script or similar tools that embed dependencies in source files
-//    - Create a custom cargo wrapper that reads dependency info from source annotations
-// 
-// 4. However, this would break the entire Cargo ecosystem:
-//    - No IDE support for dependencies
-//    - No cargo.lock for reproducible builds
-//    - Can't use standard cargo commands
-//    - Build tools wouldn't work properly
-//    - Publishing to crates.io would be impossible
-// 
-// 5. There's a reason cargo.toml exists - it's the standard way to declare project metadata
-//    and dependencies in Rust. Fighting against this would create more problems than it solves.
-// 
-// So while you *might* be able to hack something together, it's definitely not recommended
-// and would go against Rust's philosophy of explicit, declarative dependency management.
 
 /// A proc-macro attribute that compiles Brainfuck code into Rust code at compile time.
 /// 
