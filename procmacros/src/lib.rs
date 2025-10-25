@@ -142,48 +142,42 @@ pub fn raw_code(input: TokenStream) -> TokenStream {
 
 /// A proc-macro attribute that compiles Brainfuck code into Rust code at compile time.
 /// 
-/// The macro takes two string literals:
-/// - The Brainfuck code to compile
-/// - The input string (one byte per ',' command in the BF code)
+/// The macro takes one string literal: the Brainfuck code to compile
+/// The generated function accepts an input string parameter for ',' commands.
 /// 
 /// Usage:
 /// ```rust
-/// #[brainfuck("+++++++++[>++++++++<-]>.", "")]
+/// #[brainfuck("+++++++++[>++++++++<-]>.")]
 /// fn hello() {}
+/// 
+/// println!("{}", hello(""));  // No input needed
 /// ```
 /// 
-/// The function will be replaced with code that returns the BF output as a String.
+/// For BF code with input:
+/// ```rust
+/// #[brainfuck(",.,.")]
+/// fn echo() {}
+/// 
+/// println!("{}", echo("Hi"));  // Outputs: Hi
+/// ```
 #[proc_macro_attribute]
 pub fn brainfuck(attr: TokenStream, item: TokenStream) -> TokenStream {
-    use syn::{parse::Parser, punctuated::Punctuated, Token, ItemFn};
+    use syn::ItemFn;
     
-    // Parse the attribute arguments as two comma-separated string literals
-    let parser = Punctuated::<LitStr, Token![,]>::parse_separated_nonempty;
-    let args = parser.parse(attr).expect("Expected two string literals: brainfuck code and input");
-    
-    let args_vec: Vec<_> = args.into_iter().collect();
-    if args_vec.len() != 2 {
-        panic!("brainfuck macro requires exactly 2 arguments: BF code and input string");
-    }
-    
-    let bf_code = args_vec[0].value();
-    let input = args_vec[1].value();
+    // Parse the attribute argument as a single string literal
+    let bf_code = parse_macro_input!(attr as LitStr).value();
     
     // Parse the item to get the function name
     let func = syn::parse::<ItemFn>(item).expect("brainfuck attribute can only be applied to functions");
     let func_name = func.sig.ident;
     
     // Compile the brainfuck code into Rust code
-    let mut rust_code = format!("fn {}() -> String {{\n", func_name);
+    let mut rust_code = format!("fn {}(input: &str) -> String {{\n", func_name);
     rust_code.push_str("    let mut memory = vec![0u8; 30000];\n");
     rust_code.push_str("    let mut ptr = 0usize;\n");
     rust_code.push_str("    let mut output = String::new();\n");
-    
-    if !input.is_empty() {
-        rust_code.push_str(&format!("    let input = {:?}.as_bytes();\n", input));
-        rust_code.push_str("    let mut input_ptr = 0usize;\n");
-    }
-    
+    rust_code.push_str("    let input_bytes = input.as_bytes();\n");
+    rust_code.push_str("    let mut input_ptr = 0usize;\n");
     rust_code.push_str("\n");
     
     // Track loop depth for proper indentation
@@ -198,14 +192,10 @@ pub fn brainfuck(attr: TokenStream, item: TokenStream) -> TokenStream {
             '-' => rust_code.push_str(&format!("{}memory[ptr] = memory[ptr].wrapping_sub(1);\n", spaces)),
             '.' => rust_code.push_str(&format!("{}output.push(memory[ptr] as char);\n", spaces)),
             ',' => {
-                if !input.is_empty() {
-                    rust_code.push_str(&format!("{}if input_ptr < input.len() {{\n", spaces));
-                    rust_code.push_str(&format!("{}    memory[ptr] = input[input_ptr];\n", spaces));
-                    rust_code.push_str(&format!("{}    input_ptr += 1;\n", spaces));
-                    rust_code.push_str(&format!("{}}}\n", spaces));
-                } else {
-                    rust_code.push_str(&format!("{}memory[ptr] = 0;\n", spaces));
-                }
+                rust_code.push_str(&format!("{}if input_ptr < input_bytes.len() {{\n", spaces));
+                rust_code.push_str(&format!("{}    memory[ptr] = input_bytes[input_ptr];\n", spaces));
+                rust_code.push_str(&format!("{}    input_ptr += 1;\n", spaces));
+                rust_code.push_str(&format!("{}}}\n", spaces));
             },
             '[' => {
                 rust_code.push_str(&format!("{}while memory[ptr] != 0 {{\n", spaces));

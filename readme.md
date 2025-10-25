@@ -57,28 +57,37 @@ The macro will expand to the code from the URL.
 
 ## brainfuck
 
-A proc-macro attribute that compiles Brainfuck code into Rust code at compile time. The macro takes two string literals: the Brainfuck code to execute and an input string (one byte per `,` command in the BF code).
+A proc-macro attribute that compiles Brainfuck code into Rust code at compile time. The macro takes one string literal: the Brainfuck code to execute. The generated function accepts an `&str` parameter for input (one byte per `,` command in the BF code).
 
 Usage:
 ```rust
 use procmacros::brainfuck;
 
 // Classic "Hello World!" in Brainfuck
-#[brainfuck("++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.", "")]
+#[brainfuck("++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.")]
 fn hello_world() {}
 
 // Echo input
-#[brainfuck(",.", "A")]
+#[brainfuck(",.")]
 fn echo() {}
 
 // Use the generated functions
 fn main() {
-    println!("{}", hello_world());  // Output: Hello World!
-    println!("{}", echo());         // Output: A
+    println!("{}", hello_world(""));  // Output: Hello World!
+    println!("{}", echo("A"));        // Output: A
 }
 ```
 
-The macro compiles the Brainfuck code at compile time and generates a Rust function that returns the output as a `String`. The `,` command in Brainfuck reads bytes from the input string sequentially.
+The macro compiles the Brainfuck code at compile time and generates a Rust function that accepts an input string parameter and returns the output as a `String`. The `,` command in Brainfuck reads bytes from the input string sequentially.
+
+## Examples
+
+All examples are located in the `examples/` directory:
+- `compile_counter_example.rs` - Demonstrates the compile counter and fetch_code macros
+- `url_fetching_example.rs` - Demonstrates the raw_code macro
+- `brainfuck_example.rs` - Demonstrates the brainfuck compiler macro
+
+Run examples with: `cargo run --example <example_name>`
 
 ## About dependency definition macros
 
