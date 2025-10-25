@@ -4,6 +4,8 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, LitStr};
 use reqwest::blocking::get;
+use std::fs;
+use std::path::PathBuf;
 
 #[proc_macro]
 pub fn fetch_code(input: TokenStream) -> TokenStream {
@@ -19,5 +21,99 @@ pub fn fetch_code(input: TokenStream) -> TokenStream {
 
     tokens.into()
 }
+
+/// A proc-macro that counts how many times the binary has been compiled.
+/// If the count exceeds 3, it produces a compile error.
+/// 
+/// Usage: `compile_counter!()`
+#[proc_macro]
+pub fn compile_counter(_input: TokenStream) -> TokenStream {
+    // Get the path to store the counter file
+    let counter_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join(".compile_count");
+    
+    // Read the current count or start at 0
+    let count = if counter_file.exists() {
+        fs::read_to_string(&counter_file)
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    
+    // Increment the count
+    let new_count = count + 1;
+    
+    // Write the new count back to the file
+    let _ = fs::write(&counter_file, new_count.to_string());
+    
+    // Check if we've exceeded the limit
+    if new_count > 3 {
+        // Create a compile error
+        return quote! {
+            compile_error!("this program can't be compiled more than 3 times!");
+        }.into();
+    }
+    
+    // Return an empty token stream (or you could return some info about the count)
+    quote! {
+        // Compilation count: #new_count
+    }.into()
+}
+
+/// A proc-macro that fetches code from a URL and inserts it, supporting shebang-style syntax.
+/// This is designed to work with playground URLs or raw code URLs.
+/// 
+/// Usage: `#[shebang_code("https://...")]`
+#[proc_macro_attribute]
+pub fn shebang_code(attr: TokenStream, _item: TokenStream) -> TokenStream {
+    let url = parse_macro_input!(attr as LitStr).value();
+    
+    // Fetch the code from the URL
+    let response = get(&url).expect("Failed to fetch code from URL");
+    let codestring: String = response.text().expect("Failed to read response text");
+    
+    // If the code starts with a shebang, remove it
+    let cleaned_code = if codestring.starts_with("#!") {
+        codestring.lines().skip(1).collect::<Vec<_>>().join("\n")
+    } else {
+        codestring
+    };
+    
+    let code: proc_macro2::TokenStream = cleaned_code.parse().expect("Failed to parse code from response");
+    
+    let tokens = quote! {
+        #code
+    };
+    
+    tokens.into()
+}
+
+// Question: Can we make a proc-macro that defines dependencies for the rust project to not ship cargo.toml?
+// 
+// Answer: Technically, it's theoretically possible but highly impractical and not recommended:
+// 
+// 1. Proc-macros execute during compilation, which happens AFTER dependency resolution
+// 2. Cargo needs Cargo.toml before it even starts compiling to know which crates to download
+// 3. You could theoretically:
+//    - Create a build.rs script that generates Cargo.toml before compilation
+//    - Use cargo-script or similar tools that embed dependencies in source files
+//    - Create a custom cargo wrapper that reads dependency info from source annotations
+// 
+// 4. However, this would break the entire Cargo ecosystem:
+//    - No IDE support for dependencies
+//    - No cargo.lock for reproducible builds
+//    - Can't use standard cargo commands
+//    - Build tools wouldn't work properly
+//    - Publishing to crates.io would be impossible
+// 
+// 5. There's a reason cargo.toml exists - it's the standard way to declare project metadata
+//    and dependencies in Rust. Fighting against this would create more problems than it solves.
+// 
+// So while you *might* be able to hack something together, it's definitely not recommended
+// and would go against Rust's philosophy of explicit, declarative dependency management.
 
 
