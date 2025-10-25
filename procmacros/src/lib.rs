@@ -10,9 +10,11 @@ use std::path::PathBuf;
 #[proc_macro]
 pub fn fetch_code(input: TokenStream) -> TokenStream {
     let url = parse_macro_input!(input as LitStr).value();
-    let response = get(&url).expect("Failed to fetch code from URL");
-    let codestring: String = response.text().expect("Failed to read response text");
-    let code: proc_macro2::TokenStream = codestring.parse().expect("Failed to parse code from response");
+    let response = get(&url).unwrap_or_else(|e| panic!("Failed to fetch code from URL '{}': {}", url, e));
+    let codestring: String = response.text().unwrap_or_else(|e| panic!("Failed to read response text from '{}': {}", url, e));
+    let code: proc_macro2::TokenStream = codestring.parse().unwrap_or_else(|e| {
+        panic!("Failed to parse code from '{}' as valid Rust code: {}. Check that the URL contains valid Rust syntax.", url, e)
+    });
 
 
     let tokens = quote! {
@@ -48,7 +50,9 @@ pub fn compile_counter(_input: TokenStream) -> TokenStream {
     let new_count = count + 1;
     
     // Write the new count back to the file
-    let _ = fs::write(&counter_file, new_count.to_string());
+    if let Err(e) = fs::write(&counter_file, new_count.to_string()) {
+        eprintln!("Warning: Failed to write compile count to {:?}: {}", counter_file, e);
+    }
     
     // Check if we've exceeded the limit
     if new_count > 3 {
@@ -73,8 +77,8 @@ pub fn shebang_code(attr: TokenStream, _item: TokenStream) -> TokenStream {
     let url = parse_macro_input!(attr as LitStr).value();
     
     // Fetch the code from the URL
-    let response = get(&url).expect("Failed to fetch code from URL");
-    let codestring: String = response.text().expect("Failed to read response text");
+    let response = get(&url).unwrap_or_else(|e| panic!("Failed to fetch code from URL '{}': {}", url, e));
+    let codestring: String = response.text().unwrap_or_else(|e| panic!("Failed to read response text from '{}': {}", url, e));
     
     // If the code starts with a shebang, remove it
     let cleaned_code = if codestring.starts_with("#!") {
@@ -83,7 +87,9 @@ pub fn shebang_code(attr: TokenStream, _item: TokenStream) -> TokenStream {
         codestring
     };
     
-    let code: proc_macro2::TokenStream = cleaned_code.parse().expect("Failed to parse code from response");
+    let code: proc_macro2::TokenStream = cleaned_code.parse().unwrap_or_else(|e| {
+        panic!("Failed to parse code from '{}' as valid Rust code: {}. Check that the URL contains valid Rust syntax.", url, e)
+    });
     
     let tokens = quote! {
         #code
